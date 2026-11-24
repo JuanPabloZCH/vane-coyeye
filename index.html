@@ -1,0 +1,108 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no, maximum-scale=1.0" />
+  <meta name="theme-color" content="#1e6bff" />
+  <title>VANE COYEYE 💙</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Fredoka:wght@400;600;700&family=Nunito:wght@400;700;800&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="css/styles.css" />
+  <link rel="stylesheet" href="css/game.css" />
+</head>
+<body>
+  <div id="app">
+    <canvas id="gameCanvas" aria-label="VANE COYEYE juego"></canvas>
+
+    <!-- HUD -->
+    <div id="hud" class="hud hidden">
+      <div class="hud-left">
+        <div class="hud-item"><span class="hud-label">Puntos</span><span id="score" class="hud-value">0</span></div>
+        <div class="hud-item"><span class="hud-label">Distancia</span><span id="distance" class="hud-value">0 m</span></div>
+      </div>
+      <div class="hud-right">
+        <div class="hud-item"><span class="hud-label">💙</span><span id="hearts" class="hud-value">0</span></div>
+        <div class="hud-item"><span class="hud-label">Récord</span><span id="best" class="hud-value">0</span></div>
+        <button id="pauseBtn" class="icon-btn" aria-label="Pausar">⏸</button>
+        <button id="soundBtn" class="icon-btn" aria-label="Sonido">🔊</button>
+      </div>
+    </div>
+
+    <!-- Menu -->
+    <div id="menuScreen" class="screen">
+      <div class="menu-content">
+        <div class="menu-hearts" aria-hidden="true"></div>
+        <h1 class="title">VANE COYEYE <span class="blue">💙</span></h1>
+        <p class="subtitle">Corre, Vane, corre... ¡COYEYE!</p>
+        <div class="menu-char" aria-hidden="true">
+          <canvas id="menuChar" width="200" height="220"></canvas>
+        </div>
+        <p class="menu-msg">Un pequeño juego hecho para ti.</p>
+        <p class="menu-msg2">¿Lista para correr, Vane?</p>
+        <button id="playBtn" class="btn primary">JUGAR</button>
+        <div class="menu-controls">
+          <button id="menuSoundBtn" class="btn small">🔊 Sonido</button>
+        </div>
+        <p class="menu-hint">PC: ← → cambiar carril · ↑ / espacio saltar · ↓ deslizarse · P pausa<br/>Móvil: desliza en cualquier dirección</p>
+      </div>
+    </div>
+
+    <!-- Pause -->
+    <div id="pauseScreen" class="screen hidden">
+      <div class="panel">
+        <h2>PAUSA</h2>
+        <p>Respira, Vane 💙</p>
+        <button id="resumeBtn" class="btn primary">CONTINUAR</button>
+        <button id="quitBtn" class="btn secondary">INICIO</button>
+      </div>
+    </div>
+
+    <!-- Game Over -->
+    <div id="gameOverScreen" class="screen hidden">
+      <div class="panel">
+        <h2>¡COYEYE, VANE! 😂</h2>
+        <p id="goMessage" class="go-message"></p>
+        <div class="stats">
+          <div><span>Puntos</span><strong id="goScore">0</strong></div>
+          <div><span>Distancia</span><strong id="goDistance">0 m</strong></div>
+          <div><span>Corazones</span><strong id="goHearts">0</strong></div>
+          <div><span>Récord</span><strong id="goBest">0</strong></div>
+        </div>
+        <button id="retryBtn" class="btn primary">VOLVER A CORRER</button>
+        <button id="homeBtn" class="btn secondary">INICIO</button>
+      </div>
+    </div>
+
+    <!-- Special final -->
+    <div id="specialScreen" class="screen hidden">
+      <div class="panel special">
+        <h2>💙 Para ti, Vane 💙</h2>
+        <div class="special-art" aria-hidden="true">♾️ 08 ♾️</div>
+        <p id="specialMessage" class="special-msg"></p>
+        <button id="specialCloseBtn" class="btn primary">SEGUIR CORRIENDO</button>
+      </div>
+    </div>
+
+    <!-- Surprise toast -->
+    <div id="toast" class="toast hidden"></div>
+
+    <!-- Touch controls -->
+    <div id="touchControls" class="touch-controls hidden">
+      <button class="tc-btn" data-dir="left" aria-label="Izquierda">◀</button>
+      <button class="tc-btn" data-dir="up" aria-label="Saltar">▲</button>
+      <button class="tc-btn" data-dir="right" aria-label="Derecha">▶</button>
+      <button class="tc-btn" data-dir="down" aria-label="Deslizarse">▼</button>
+    </div>
+  </div>
+
+  <script src="js/config.js"></script>
+  <script src="js/audio.js"></script>
+  <script src="js/player.js"></script>
+  <script src="js/obstacles.js"></script>
+  <script src="js/collectibles.js"></script>
+  <script src="js/ui.js"></script>
+  <script src="js/game.js"></script>
+  <script src="js/main.js"></script>
+</body>
+</html>

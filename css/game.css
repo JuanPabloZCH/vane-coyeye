@@ -1,0 +1,4 @@
+/* Game-specific tweaks (canvas handles most visuals) */
+#gameCanvas { image-rendering: auto; }
+body.playing { cursor: none; }
+@media (pointer: coarse) { body.playing { cursor: default; } }
