@@ -99,7 +99,7 @@ Edita `js/config.js`:
 - `specialMessage`: dedicatoria final.
 - `PERSONAL`: apodos, frases.
 
-Agrega referencias reales de tu chat "Mi Dulce Demonio" en esos arreglos. No incluyas información privada o sensible.
+Agrega referencias personales en esos arreglos. No incluyas información privada o sensible.
 
 ## Controles
 

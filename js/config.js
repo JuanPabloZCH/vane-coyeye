@@ -44,7 +44,6 @@ const CONFIG = {
     "08 · 10 · 2026",
     "Corre, Vane, corre... 💙",
     "¡Tú puedes!",
-    "Mi Dulce Demonio 💙",
   ],
 
   // Dedicatoria final (editable)
@@ -60,7 +59,7 @@ const CONFIG = {
 };
 
 // Apodos / frases / referencias personales.
-// Agrega aquí contenidos reales de tu chat "Mi Dulce Demonio".
+// Agrega aquí contenidos personales si lo deseas.
 const PERSONAL = {
   nicknames: ["Vane"],
   catchphrases: ["¡COYEYE!"],

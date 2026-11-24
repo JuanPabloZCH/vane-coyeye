@@ -160,7 +160,8 @@ const Game = (function () {
 
   function takeDamage(amount, reason) {
     if (player.invincible > 0) return;
-    lives = Math.max(0, lives - amount);
+    const dmg = (typeof amount === "number" && amount > 0) ? amount : 1;
+    lives = Math.max(0, (isNaN(lives) ? CONFIG.maxLives : lives) - dmg);
     player.invincible = CONFIG.invulnerabilityTime;
     player.trip();
     spawnBurst(player.x, player.y - 20, 20, "#ff5555");
