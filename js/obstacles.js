@@ -1,11 +1,11 @@
 // Obstacle & spider types
 const OBSTACLE_TYPES = [
-  { id: "spider", emoji: "🕷️", color: "#2b2b3a", w: 40, h: 34, low: false, high: false },
-  { id: "briefcase", emoji: "💼", color: "#8b5a2b", w: 38, h: 30, low: true, high: false },
-  { id: "coffee", emoji: "☕", color: "#6f4e37", w: 30, h: 34, low: true, high: false },
-  { id: "phone", emoji: "📱", color: "#444", w: 26, h: 34, low: true, high: false },
-  { id: "bed", emoji: "🛏️", color: "#b08968", w: 46, h: 30, low: false, high: true },
-  { id: "web", emoji: "🕸️", color: "#aaa", w: 44, h: 40, low: false, high: true },
+  { id: "spider", emoji: "🕷️", color: "#2b2b3a", w: 40, h: 34, low: false, high: false, damage: 1 },
+  { id: "briefcase", emoji: "💼", color: "#8b5a2b", w: 38, h: 30, low: true, high: false, damage: 1 },
+  { id: "phone", emoji: "📱", color: "#444", w: 26, h: 34, low: true, high: false, damage: 1 },
+  { id: "bed", emoji: "🛏️", color: "#b08968", w: 46, h: 30, low: false, high: true, damage: 1 },
+  { id: "web", emoji: "🕸️", color: "#aaa", w: 44, h: 40, low: false, high: true, damage: 1 },
+  { id: "heavy", emoji: "⚡", color: "#d6336c", w: 42, h: 42, low: false, high: false, damage: 2, rare: true },
 ];
 
 class Obstacle {

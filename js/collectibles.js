@@ -1,9 +1,10 @@
 const COLLECTIBLE_TYPES = [
-  { id: "heart", emoji: "💙", color: "#1e6bff", value: 1, points: 50 },
+  { id: "heart", emoji: "💙", color: "#1e6bff", value: 1, points: 50, heal: true },
   { id: "infinity", emoji: "♾️", color: "#7fb0ff", value: 0, points: 80 },
   { id: "finger", emoji: "🫰🏽", color: "#ffd166", value: 0, points: 60 },
   { id: "star", emoji: "⭐", color: "#ffd166", value: 0, points: 40 },
   { id: "letter", emoji: "💌", color: "#ff7fb0", value: 0, points: 70 },
+  { id: "coffee", emoji: "☕", color: "#6f4e37", value: 0, points: 50, heal: true },
   { id: "num08", emoji: "08", color: "#ffffff", value: 0, points: 200, special: true },
 ];
 

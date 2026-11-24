@@ -17,9 +17,11 @@ const Game = (function () {
   let bgLayers = [];
   let score = 0;
   let distance = 0;
-  let hearts = 0;
+  let hearts = 0;       // collected blue hearts
+  let lives = 0;        // current lives
   let best = 0;
   let speed = 0;
+  let targetSpeed = 0;
   let spawnTimer = 0;
   let collectTimer = 0;
   let surpriseTimer = 0;
@@ -33,6 +35,11 @@ const Game = (function () {
   let skyT = 0;
   let touchStart = null;
   let lastObstacleLane = -1;
+  let elapsed = 0;       // survival time seconds
+  let level = 1;
+  let levelChangedAt = 0;
+  let invulnFlash = 0;
+  let milestones = { 30: false, 60: false, 120: false, 180: false };
 
   function resize() {
     dpr = Math.min(window.devicePixelRatio || 1, 2);
@@ -84,19 +91,25 @@ const Game = (function () {
     score = 0;
     distance = 0;
     hearts = 0;
+    lives = CONFIG.maxLives;
     speed = CONFIG.startSpeed;
-    spawnTimer = 1.1;
-    collectTimer = 0.8;
-    surpriseTimer = 10;
+    targetSpeed = CONFIG.startSpeed;
+    spawnTimer = 1.6;
+    collectTimer = 1.0;
+    surpriseTimer = 12;
     screenShake = 0;
     specialTriggered = false;
     specialShown = false;
     coyeyeCooldown = 0;
-    spiderEventTimer = 12 + Math.random() * 6;
+    spiderEventTimer = 22;
     spiderEventActive = 0;
     spiderSpawnClock = 0;
     skyT = 0;
     lastObstacleLane = -1;
+    elapsed = 0;
+    level = 1;
+    levelChangedAt = 0;
+    milestones = { 30: false, 60: false, 120: false, 180: false };
     lastTime = performance.now();
   }
 
@@ -112,7 +125,6 @@ const Game = (function () {
     document.body.classList.add("playing");
     const touchEl = document.getElementById("touchControls");
     if (CONFIG.showTouchControls) touchEl.classList.remove("hidden");
-    // hide touch controls on desktop
     if (!isTouch()) touchEl.classList.add("hidden");
     loop();
   }
@@ -146,6 +158,19 @@ const Game = (function () {
     loop();
   }
 
+  function takeDamage(amount, reason) {
+    if (player.invincible > 0) return;
+    lives = Math.max(0, lives - amount);
+    player.invincible = CONFIG.invulnerabilityTime;
+    player.trip();
+    spawnBurst(player.x, player.y - 20, 20, "#ff5555");
+    screenShake = 0.45;
+    UI.showToast("¡Ay! -" + amount + " ❤️");
+    if (lives <= 0) {
+      setTimeout(() => gameOver(), 300);
+    }
+  }
+
   function gameOver() {
     state = "gameover";
     running = false;
@@ -156,8 +181,6 @@ const Game = (function () {
     document.body.classList.remove("playing");
     document.getElementById("touchControls").classList.add("hidden");
     if (raf) cancelAnimationFrame(raf);
-    spawnBurst(player.x, player.y - 20, 26, "#ff7b55");
-    screenShake = 0.5;
   }
 
   function triggerSpecial() {
@@ -187,7 +210,22 @@ const Game = (function () {
   }
 
   function update(dt) {
-    speed = Math.min(CONFIG.maxSpeed, speed + CONFIG.speedRamp * dt);
+    elapsed += dt;
+
+    // level progression by time
+    const newLevel = Math.min(5, 1 + Math.floor(elapsed / 30));
+    if (newLevel > level) {
+      level = newLevel;
+      levelChangedAt = elapsed;
+      const msgs = ["", "¡Vane está calentando! 💙", "¡Nivel 2!", "¡Ahora sí, cuidado!", "¡Las arañas llegaron!", "¡COYEYE MODE!"];
+      UI.showToast(msgs[level] || "¡Nivel " + level + "!");
+      AudioSys.playCoyeye();
+    }
+
+    // target speed by level
+    targetSpeed = Math.min(CONFIG.maxSpeed, CONFIG.startSpeed + (level - 1) * CONFIG.speedPerLevel);
+    speed += (targetSpeed - speed) * Math.min(1, CONFIG.speedLerp * dt);
+
     distance += (speed / 12) * dt;
     score += speed * dt * 0.5;
 
@@ -197,34 +235,44 @@ const Game = (function () {
     spawnTimer -= dt;
     if (spawnTimer <= 0) {
       const last = obstacles.length ? obstacles[obstacles.length-1] : null;
-      const safeGap = last ? last.y > 130 : true;
+      const safeGap = last ? last.y > 150 : true;
       if (safeGap) {
         let lane = Math.floor(Math.random() * CONFIG.laneCount);
-        // avoid same lane consecutively when possible
         if (lane === lastObstacleLane && CONFIG.laneCount > 1) {
           lane = (lane + 1 + Math.floor(Math.random() * (CONFIG.laneCount - 1))) % CONFIG.laneCount;
         }
         lastObstacleLane = lane;
-        // spider chance increases with speed
-        let type = null;
-        const spiderChance = 0.18 + (speed - CONFIG.startSpeed) / (CONFIG.maxSpeed - CONFIG.startSpeed) * 0.12;
-        if (Math.random() < spiderChance) type = OBSTACLE_TYPES[0];
-        else type = OBSTACLE_TYPES[1 + Math.floor(Math.random() * (OBSTACLE_TYPES.length - 1))];
+
+        // choose type based on level
+        let type;
+        const heavyChance = (level >= 3) ? 0.06 : 0;
+        const spiderChance = (level >= 2 ? 0.16 : 0.05) + (level >= 4 ? 0.1 : 0);
+        const r = Math.random();
+        if (r < heavyChance) type = OBSTACLE_TYPES.find(t => t.id === "heavy");
+        else if (r < heavyChance + spiderChance) type = OBSTACLE_TYPES[0];
+        else type = OBSTACLE_TYPES[1 + Math.floor(Math.random() * (OBSTACLE_TYPES.length - 2))]; // exclude heavy index last
+        // ensure not heavy when level low
+        if (level < 3 && type && type.id === "heavy") type = OBSTACLE_TYPES[1];
+
         obstacles.push(new Obstacle(type, lane, -40));
-        const base = CONFIG.spawnIntervalStart - (speed - CONFIG.startSpeed) / (CONFIG.maxSpeed - CONFIG.startSpeed) * (CONFIG.spawnIntervalStart - CONFIG.spawnIntervalMin);
-        spawnTimer = Math.max(CONFIG.spawnIntervalMin, base) + Math.random() * 0.25;
+
+        const baseInterval = CONFIG.spawnIntervalStart - (level - 1) * 0.18;
+        const minI = Math.max(CONFIG.spawnIntervalMin, baseInterval - 0.4);
+        spawnTimer = Math.max(minI, baseInterval) + Math.random() * 0.3;
       } else {
-        spawnTimer = 0.15;
+        spawnTimer = 0.12;
       }
     }
 
-    // spider event
-    spiderEventTimer -= dt;
-    if (spiderEventTimer <= 0 && !spiderEventActive) {
-      spiderEventActive = 1.6;
-      spiderSpawnClock = 0;
-      spiderEventTimer = 16 + Math.random() * 8;
-      UI.showToast("🕷️ ¡Arañas! ¡COYEYE!");
+    // spider event (less early)
+    if (level >= 2) {
+      spiderEventTimer -= dt;
+      if (spiderEventTimer <= 0 && !spiderEventActive) {
+        spiderEventActive = 1.4;
+        spiderSpawnClock = 0;
+        spiderEventTimer = (level >= 4 ? 14 : 20) + Math.random() * 8;
+        UI.showToast("🕷️ ¡Arañas! ¡COYEYE!");
+      }
     }
     if (spiderEventActive > 0) {
       spiderEventActive -= dt;
@@ -233,7 +281,7 @@ const Game = (function () {
         const lane = Math.floor(Math.random() * CONFIG.laneCount);
         obstacles.push(new Obstacle(OBSTACLE_TYPES[0], lane, -40));
         player.scare();
-        spiderSpawnClock = 0.45;
+        spiderSpawnClock = 0.5;
       }
     }
 
@@ -241,7 +289,7 @@ const Game = (function () {
     collectTimer -= dt;
     if (collectTimer <= 0) {
       if (Math.random() < CONFIG.collectibleChance) collectibles.push(spawnCollectible());
-      collectTimer = 1.1 + Math.random() * 1.1;
+      collectTimer = 1.2 + Math.random() * 1.2;
     }
 
     // update entities
@@ -266,20 +314,20 @@ const Game = (function () {
         const oh = o.hitbox(player.laneX);
         if (rectOverlap(ph, oh)) {
           const type = o.type;
+          // low obstacle cleared by jump
           if (type.low && player.jumping) continue;
+          // high obstacle cleared by slide or jump
           if (type.high && (player.sliding || player.jumping)) continue;
+          // spider: damage + trip + scare
           if (type.id === "spider") {
-            player.trip();
-            spawnBurst(player.x, player.y - 20, 18, "#ff5555");
-            screenShake = 0.35;
+            takeDamage(type.damage, "spider");
             o.passed = true;
             break;
           } else {
-            spawnBurst(player.x, player.y - 20, 24, "#ff9900");
-            screenShake = 0.6;
-            AudioSys.playCoyeye(true);
-            gameOver();
-            return;
+            // normal/heavy obstacle
+            takeDamage(type.damage, type.id);
+            o.passed = true;
+            break;
           }
         }
       }
@@ -297,22 +345,33 @@ const Game = (function () {
         score += c.type.points;
         spawnBurst(c.x, c.y, 14, c.type.color);
         floatTexts.push({ x: c.x, y: c.y, text: "+" + c.type.points, color: c.type.color, life: 1.0 });
+        // heal life if heart collectible
+        if (c.type.heal) {
+          if (lives < CONFIG.maxLives) {
+            lives = Math.min(CONFIG.maxLives, lives + 1);
+            UI.showToast("❤️ +1 vida");
+            spawnBurst(c.x, c.y, 16, "#ff5577");
+          } else {
+            score += 30;
+            floatTexts.push({ x: c.x, y: c.y - 10, text: "+30", color: "#ffd166", life: 1.0 });
+          }
+        }
         if (c.type.id === "num08") {
           UI.showToast("08 💙");
           spawnBurst(c.x, c.y, 28, "#ffffff");
         }
-        if (c.type.id === "heart" && Math.random() < 0.22) {
+        if (c.type.id === "heart" && Math.random() < 0.2) {
           UI.showToast(CONFIG.surpriseMessages[Math.floor(Math.random()*CONFIG.surpriseMessages.length)]);
         }
       }
     }
 
-    // random coyeye trip
+    // random coyeye trip (costs no life? just funny) - make it not damage, just trip
     coyeyeCooldown -= dt;
-    if (coyeyeCooldown <= 0 && Math.random() < 0.0025) {
+    if (coyeyeCooldown <= 0 && Math.random() < 0.0015) {
       player.trip();
-      screenShake = 0.3;
-      coyeyeCooldown = 8;
+      screenShake = 0.25;
+      coyeyeCooldown = 10;
       UI.showToast("¡COYEYE! 😂");
     }
 
@@ -320,8 +379,14 @@ const Game = (function () {
     surpriseTimer -= dt;
     if (surpriseTimer <= 0) {
       UI.showToast(CONFIG.surpriseMessages[Math.floor(Math.random()*CONFIG.surpriseMessages.length)]);
-      surpriseTimer = 13 + Math.random() * 9;
+      surpriseTimer = 14 + Math.random() * 10;
     }
+
+    // milestones rewards
+    if (!milestones[30] && elapsed >= 30) { milestones[30]=true; UI.showToast("¡30 segundos! 💙"); }
+    if (!milestones[60] && elapsed >= 60) { milestones[60]=true; UI.showToast("¡1 minuto! 🎉"); AudioSys.playCoyeye(); }
+    if (!milestones[120] && elapsed >= 120) { milestones[120]=true; UI.showToast("¡2 minutos! ¡Increíble! 🏆"); }
+    if (!milestones[180] && elapsed >= 180) { milestones[180]=true; UI.showToast("¡3 minutos! ¡Leyenda! 👑"); }
 
     // special trigger
     if (!specialTriggered && (distance >= CONFIG.specialDistance || hearts >= CONFIG.specialHearts)) {
@@ -356,7 +421,14 @@ const Game = (function () {
     drawBackground();
     for (let c of collectibles) c.draw(ctx, player.laneX);
     for (let o of obstacles) o.draw(ctx, player.laneX);
-    if (player) player.draw(ctx);
+    if (player) {
+      // blinking when invincible
+      if (player.invincible > 0 && Math.floor(player.invincible * 10) % 2 === 0) {
+        ctx.globalAlpha = 0.35;
+      }
+      player.draw(ctx);
+      ctx.globalAlpha = 1;
+    }
     for (let p of particles) {
       ctx.globalAlpha = Math.max(0, p.life);
       ctx.fillStyle = p.color;
@@ -373,7 +445,7 @@ const Game = (function () {
     ctx.globalAlpha = 1;
     ctx.restore();
 
-    if (state === "playing") UI.updateHUD({ score, distance, hearts, best });
+    if (state === "playing") UI.updateHUD({ score, distance, hearts, best, lives });
   }
 
   function drawBackground() {
@@ -391,7 +463,6 @@ const Game = (function () {
     ctx.fillStyle = g;
     ctx.fillRect(0, 0, W, H);
 
-    // parallax
     for (let li = 0; li < bgLayers.length; li++) {
       const layer = bgLayers[li];
       const off = (distance * 2 * layer.speed) % W;
@@ -409,13 +480,11 @@ const Game = (function () {
       }
     }
 
-    // ground
     ctx.fillStyle = (night > 0.6) ? "#152a52" : "#1f3a6e";
     ctx.fillRect(0, H * 0.86, W, H * 0.14);
     ctx.fillStyle = "#1e6bff";
     ctx.fillRect(0, H * 0.86, W, 4);
 
-    // lane lines
     ctx.strokeStyle = "rgba(255,255,255,0.12)";
     ctx.lineWidth = 2;
     for (let i = 0; i < CONFIG.laneCount - 1; i++) {
@@ -426,7 +495,6 @@ const Game = (function () {
       ctx.stroke();
     }
 
-    // floating hearts
     ctx.font = "14px serif";
     ctx.fillStyle = "rgba(255,255,255,0.18)";
     for (let i = 0; i < 5; i++) {

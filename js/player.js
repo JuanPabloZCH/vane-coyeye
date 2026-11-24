@@ -53,7 +53,7 @@ class Player {
     this.state = "trip";
     this.tripTimer = 1.0;
     this.scareT = 1.0;
-    AudioSys.playCoyeye();
+    AudioSys.playCoyeye(true);
   }
   scare() {
     this.scareT = 1.2;

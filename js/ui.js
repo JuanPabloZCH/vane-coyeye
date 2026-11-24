@@ -5,6 +5,7 @@ const UI = {
       hud: document.getElementById("hud"),
       score: document.getElementById("score"),
       distance: document.getElementById("distance"),
+      lives: document.getElementById("lives"),
       hearts: document.getElementById("hearts"),
       best: document.getElementById("best"),
       menu: document.getElementById("menuScreen"),
@@ -43,6 +44,9 @@ const UI = {
     this.els.distance.textContent = Math.floor(state.distance) + " m";
     this.els.hearts.textContent = state.hearts;
     this.els.best.textContent = Math.floor(state.best);
+    if (this.els.lives && typeof state.lives !== "undefined") {
+      this.els.lives.textContent = "❤️ " + state.lives;
+    }
   },
   setHudVisible(v) { this.els.hud.classList.toggle("hidden", !v); },
   showToast(msg, dur = 2200) {
