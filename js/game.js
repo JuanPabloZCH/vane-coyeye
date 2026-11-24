@@ -5,11 +5,10 @@ const Game = (function () {
   let W = 0, H = 0, dpr = 1;
   let running = false;
   let paused = false;
-  let state = "menu"; // menu, playing, paused, gameover, special
+  let state = "menu";
   let lastTime = 0;
   let raf = null;
 
-  // game data
   let player;
   let obstacles = [];
   let collectibles = [];
@@ -29,7 +28,11 @@ const Game = (function () {
   let specialShown = false;
   let coyeyeCooldown = 0;
   let spiderEventTimer = 0;
+  let spiderEventActive = 0;
+  let spiderSpawnClock = 0;
   let skyT = 0;
+  let touchStart = null;
+  let lastObstacleLane = -1;
 
   function resize() {
     dpr = Math.min(window.devicePixelRatio || 1, 2);
@@ -46,20 +49,18 @@ const Game = (function () {
 
   function initBg() {
     bgLayers = [
-      { speed: 0.15, items: [] },
-      { speed: 0.35, items: [] },
-      { speed: 0.6, items: [] },
+      { speed: 0.12, items: [] },
+      { speed: 0.3, items: [] },
+      { speed: 0.55, items: [] },
     ];
-    // generate random buildings/trees per layer
     for (let li = 0; li < bgLayers.length; li++) {
       const layer = bgLayers[li];
-      const count = 12;
+      const count = 10;
       for (let i = 0; i < count; i++) {
         layer.items.push({
-          x: (i / count) * W + Math.random() * 40,
-          w: 40 + Math.random() * 60,
-          h: 60 + Math.random() * (li * 40 + 40),
-          type: li === 0 ? "far" : (li === 1 ? "mid" : "near"),
+          x: (i / count) * W + Math.random() * 30,
+          w: 50 + Math.random() * 70,
+          h: 50 + Math.random() * (li * 50 + 40),
           color: li === 0 ? "#1a2f5a" : (li === 1 ? "#1f3a6e" : "#264a8a"),
         });
       }
@@ -84,15 +85,18 @@ const Game = (function () {
     distance = 0;
     hearts = 0;
     speed = CONFIG.startSpeed;
-    spawnTimer = 1.0;
-    collectTimer = 0.6;
-    surpriseTimer = 8;
+    spawnTimer = 1.1;
+    collectTimer = 0.8;
+    surpriseTimer = 10;
     screenShake = 0;
     specialTriggered = false;
     specialShown = false;
     coyeyeCooldown = 0;
-    spiderEventTimer = 0;
+    spiderEventTimer = 12 + Math.random() * 6;
+    spiderEventActive = 0;
+    spiderSpawnClock = 0;
     skyT = 0;
+    lastObstacleLane = -1;
     lastTime = performance.now();
   }
 
@@ -106,7 +110,10 @@ const Game = (function () {
     UI.hideAllScreens();
     UI.setHudVisible(true);
     document.body.classList.add("playing");
-    if (CONFIG.showTouchControls && isTouch()) UI.els.touch.classList.remove("hidden");
+    const touchEl = document.getElementById("touchControls");
+    if (CONFIG.showTouchControls) touchEl.classList.remove("hidden");
+    // hide touch controls on desktop
+    if (!isTouch()) touchEl.classList.add("hidden");
     loop();
   }
 
@@ -124,8 +131,19 @@ const Game = (function () {
     if (state !== "paused") return;
     state = "playing";
     paused = false;
-    UI.showScreen(null);
+    UI.hideAllScreens();
+    UI.setHudVisible(true);
     lastTime = performance.now();
+  }
+  function continuePlay() {
+    state = "playing";
+    running = true;
+    paused = false;
+    UI.hideAllScreens();
+    UI.setHudVisible(true);
+    document.body.classList.add("playing");
+    lastTime = performance.now();
+    loop();
   }
 
   function gameOver() {
@@ -136,8 +154,10 @@ const Game = (function () {
     UI.gameOver({ score, distance, hearts, best });
     UI.showScreen("go");
     document.body.classList.remove("playing");
-    UI.els.touch.classList.add("hidden");
+    document.getElementById("touchControls").classList.add("hidden");
     if (raf) cancelAnimationFrame(raf);
+    spawnBurst(player.x, player.y - 20, 26, "#ff7b55");
+    screenShake = 0.5;
   }
 
   function triggerSpecial() {
@@ -149,22 +169,10 @@ const Game = (function () {
     UI.special();
     UI.showScreen("special");
     document.body.classList.remove("playing");
-    UI.els.touch.classList.add("hidden");
+    document.getElementById("touchControls").classList.add("hidden");
     if (raf) cancelAnimationFrame(raf);
     spawnBurst(W/2, H*0.5, 40, "#1e6bff");
     if (player) player.state = "celebrate";
-  }
-
-  function continuePlay() {
-    state = "playing";
-    running = true;
-    paused = false;
-    UI.hideAllScreens();
-    UI.setHudVisible(true);
-    document.body.classList.add("playing");
-    if (CONFIG.showTouchControls && isTouch()) UI.els.touch.classList.remove("hidden");
-    lastTime = performance.now();
-    loop();
   }
 
   function loop() {
@@ -179,65 +187,94 @@ const Game = (function () {
   }
 
   function update(dt) {
-    // speed ramp
     speed = Math.min(CONFIG.maxSpeed, speed + CONFIG.speedRamp * dt);
-    distance += (speed / 10) * dt; // meters-ish
+    distance += (speed / 12) * dt;
     score += speed * dt * 0.5;
 
     player.update(dt);
 
-    // spawn obstacles
+    // spawn obstacles with reaction safety
     spawnTimer -= dt;
     if (spawnTimer <= 0) {
-      obstacles.push(spawnObstacle(speed));
-      spawnTimer = CONFIG.spawnIntervalStart - (speed - CONFIG.startSpeed) / (CONFIG.maxSpeed - CONFIG.startSpeed) * (CONFIG.spawnIntervalStart - CONFIG.spawnIntervalMin);
-      if (spawnTimer < CONFIG.spawnIntervalMin) spawnTimer = CONFIG.spawnIntervalMin;
-      spawnTimer += Math.random() * 0.3;
+      const last = obstacles.length ? obstacles[obstacles.length-1] : null;
+      const safeGap = last ? last.y > 130 : true;
+      if (safeGap) {
+        let lane = Math.floor(Math.random() * CONFIG.laneCount);
+        // avoid same lane consecutively when possible
+        if (lane === lastObstacleLane && CONFIG.laneCount > 1) {
+          lane = (lane + 1 + Math.floor(Math.random() * (CONFIG.laneCount - 1))) % CONFIG.laneCount;
+        }
+        lastObstacleLane = lane;
+        // spider chance increases with speed
+        let type = null;
+        const spiderChance = 0.18 + (speed - CONFIG.startSpeed) / (CONFIG.maxSpeed - CONFIG.startSpeed) * 0.12;
+        if (Math.random() < spiderChance) type = OBSTACLE_TYPES[0];
+        else type = OBSTACLE_TYPES[1 + Math.floor(Math.random() * (OBSTACLE_TYPES.length - 1))];
+        obstacles.push(new Obstacle(type, lane, -40));
+        const base = CONFIG.spawnIntervalStart - (speed - CONFIG.startSpeed) / (CONFIG.maxSpeed - CONFIG.startSpeed) * (CONFIG.spawnIntervalStart - CONFIG.spawnIntervalMin);
+        spawnTimer = Math.max(CONFIG.spawnIntervalMin, base) + Math.random() * 0.25;
+      } else {
+        spawnTimer = 0.15;
+      }
     }
-    // spawn collectibles
+
+    // spider event
+    spiderEventTimer -= dt;
+    if (spiderEventTimer <= 0 && !spiderEventActive) {
+      spiderEventActive = 1.6;
+      spiderSpawnClock = 0;
+      spiderEventTimer = 16 + Math.random() * 8;
+      UI.showToast("🕷️ ¡Arañas! ¡COYEYE!");
+    }
+    if (spiderEventActive > 0) {
+      spiderEventActive -= dt;
+      spiderSpawnClock -= dt;
+      if (spiderSpawnClock <= 0) {
+        const lane = Math.floor(Math.random() * CONFIG.laneCount);
+        obstacles.push(new Obstacle(OBSTACLE_TYPES[0], lane, -40));
+        player.scare();
+        spiderSpawnClock = 0.45;
+      }
+    }
+
+    // collectibles
     collectTimer -= dt;
     if (collectTimer <= 0) {
       if (Math.random() < CONFIG.collectibleChance) collectibles.push(spawnCollectible());
-      collectTimer = 1.2 + Math.random() * 1.2;
+      collectTimer = 1.1 + Math.random() * 1.1;
     }
 
-    // update obstacles
+    // update entities
     for (let o of obstacles) o.update(dt, speed, player.x);
     obstacles = obstacles.filter(o => o.y < H + 60);
 
-    // update collectibles
     for (let c of collectibles) c.update(dt, speed);
     collectibles = collectibles.filter(c => c.y < H + 40 && !c.collected);
 
-    // update particles
-    for (let p of particles) { p.x += p.vx*dt; p.y += p.vy*dt; p.vy += 400*dt; p.life -= dt; }
+    // particles
+    for (let p of particles) { p.x += p.vx*dt; p.y += p.vy*dt; p.vy += 420*dt; p.life -= dt; }
     particles = particles.filter(p => p.life > 0);
-    for (let f of floatTexts) { f.y -= 40*dt; f.life -= dt; }
+    for (let f of floatTexts) { f.y -= 45*dt; f.life -= dt; }
     floatTexts = floatTexts.filter(f => f.life > 0);
 
-    // collisions obstacles
+    // collisions
     if (player.invincible <= 0 && player.state !== "trip") {
       const ph = player.hitbox();
       for (let o of obstacles) {
         if (o.passed) continue;
-        const oh = o.hitbox(player.laneX);
         if (o.lane !== player.lane) continue;
+        const oh = o.hitbox(player.laneX);
         if (rectOverlap(ph, oh)) {
-          // decide: low obstacle can jump over; high can slide under
           const type = o.type;
-          if (type.low && player.jumping) continue; // cleared by jump
-          if (type.high && player.sliding) continue; // cleared by slide
-          // spider special
+          if (type.low && player.jumping) continue;
+          if (type.high && (player.sliding || player.jumping)) continue;
           if (type.id === "spider") {
-            // trip + coyeye
             player.trip();
             spawnBurst(player.x, player.y - 20, 18, "#ff5555");
-            screenShake = 0.4;
-            // remove obstacle? let it pass
+            screenShake = 0.35;
             o.passed = true;
             break;
           } else {
-            // hit: game over
             spawnBurst(player.x, player.y - 20, 24, "#ff9900");
             screenShake = 0.6;
             AudioSys.playCoyeye(true);
@@ -264,19 +301,18 @@ const Game = (function () {
           UI.showToast("08 💙");
           spawnBurst(c.x, c.y, 28, "#ffffff");
         }
-        if (c.type.id === "heart") {
-          // occasional romantic toast
-          if (Math.random() < 0.25) UI.showToast(CONFIG.surpriseMessages[Math.floor(Math.random()*CONFIG.surpriseMessages.length)]);
+        if (c.type.id === "heart" && Math.random() < 0.22) {
+          UI.showToast(CONFIG.surpriseMessages[Math.floor(Math.random()*CONFIG.surpriseMessages.length)]);
         }
       }
     }
 
-    // coyeye random trip event (rare)
+    // random coyeye trip
     coyeyeCooldown -= dt;
-    if (coyeyeCooldown <= 0 && Math.random() < 0.003) {
+    if (coyeyeCooldown <= 0 && Math.random() < 0.0025) {
       player.trip();
-      screenShake = 0.35;
-      coyeyeCooldown = 6;
+      screenShake = 0.3;
+      coyeyeCooldown = 8;
       UI.showToast("¡COYEYE! 😂");
     }
 
@@ -284,7 +320,7 @@ const Game = (function () {
     surpriseTimer -= dt;
     if (surpriseTimer <= 0) {
       UI.showToast(CONFIG.surpriseMessages[Math.floor(Math.random()*CONFIG.surpriseMessages.length)]);
-      surpriseTimer = 12 + Math.random() * 10;
+      surpriseTimer = 13 + Math.random() * 9;
     }
 
     // special trigger
@@ -294,10 +330,7 @@ const Game = (function () {
       return;
     }
 
-    // screen shake decay
     if (screenShake > 0) screenShake = Math.max(0, screenShake - dt * 2.5);
-
-    // sky time
     skyT += dt;
   }
 
@@ -308,101 +341,101 @@ const Game = (function () {
   function spawnBurst(x, y, n, color) {
     for (let i = 0; i < n; i++) {
       const a = Math.random() * Math.PI * 2;
-      const sp = 60 + Math.random() * 180;
-      particles.push({ x, y, vx: Math.cos(a)*sp, vy: Math.sin(a)*sp - 80, life: 0.6 + Math.random()*0.4, color, size: 2 + Math.random()*4 });
+      const sp = 50 + Math.random() * 160;
+      particles.push({ x, y, vx: Math.cos(a)*sp, vy: Math.sin(a)*sp - 60, life: 0.5 + Math.random()*0.4, color, size: 2 + Math.random()*3 });
     }
   }
 
   function draw() {
     ctx.save();
     if (screenShake > 0) {
-      const sx = (Math.random()-0.5)*screenShake*20;
-      const sy = (Math.random()-0.5)*screenShake*20;
+      const sx = (Math.random()-0.5)*screenShake*16;
+      const sy = (Math.random()-0.5)*screenShake*16;
       ctx.translate(sx, sy);
     }
     drawBackground();
-    // collectibles
     for (let c of collectibles) c.draw(ctx, player.laneX);
-    // obstacles
     for (let o of obstacles) o.draw(ctx, player.laneX);
-    // player
     if (player) player.draw(ctx);
-    // particles
     for (let p of particles) {
       ctx.globalAlpha = Math.max(0, p.life);
       ctx.fillStyle = p.color;
       ctx.beginPath(); ctx.arc(p.x, p.y, p.size, 0, Math.PI*2); ctx.fill();
     }
     ctx.globalAlpha = 1;
-    // float texts
     for (let f of floatTexts) {
       ctx.globalAlpha = Math.max(0, f.life);
       ctx.fillStyle = f.color;
-      ctx.font = "bold 18px Nunito, sans-serif";
+      ctx.font = "bold 16px Nunito, sans-serif";
       ctx.textAlign = "center";
       ctx.fillText(f.text, f.x, f.y);
     }
     ctx.globalAlpha = 1;
     ctx.restore();
 
-    // HUD update
     if (state === "playing") UI.updateHUD({ score, distance, hearts, best });
   }
 
   function drawBackground() {
-    // sky gradient
     const g = ctx.createLinearGradient(0, 0, 0, H);
-    const night = (Math.sin(skyT * 0.1) + 1) / 2;
-    g.addColorStop(0, night > 0.6 ? "#0b1a3a" : "#6aa9ff");
-    g.addColorStop(0.6, night > 0.6 ? "#1a2f5a" : "#b8d8ff");
-    g.addColorStop(1, night > 0.6 ? "#264a8a" : "#e8f2ff");
+    const night = (Math.sin(skyT * 0.08) + 1) / 2;
+    if (night > 0.6) {
+      g.addColorStop(0, "#0b1a3a");
+      g.addColorStop(0.6, "#1a2f5a");
+      g.addColorStop(1, "#264a8a");
+    } else {
+      g.addColorStop(0, "#6aa9ff");
+      g.addColorStop(0.6, "#b8d8ff");
+      g.addColorStop(1, "#e8f2ff");
+    }
     ctx.fillStyle = g;
     ctx.fillRect(0, 0, W, H);
 
-    // parallax buildings
+    // parallax
     for (let li = 0; li < bgLayers.length; li++) {
       const layer = bgLayers[li];
       const off = (distance * 2 * layer.speed) % W;
       for (let it of layer.items) {
         let x = it.x - off;
         if (x < -it.w) x += W + it.w;
-        // draw two copies for seamless
         for (let k = 0; k < 2; k++) {
-          const xx = x + k * (W + 0);
+          const xx = x + k * W;
           if (xx > W + it.w) break;
+          if (xx < -it.w) continue;
           ctx.fillStyle = it.color;
-          ctx.fillRect(xx, H * 0.55 - it.h * (0.4 + li*0.15), it.w, it.h * (0.4 + li*0.15) + H * 0.45);
+          const bh = it.h * (0.35 + li*0.12);
+          ctx.fillRect(xx, H * 0.58 - bh, it.w, bh + H * 0.42);
         }
       }
     }
 
     // ground
-    ctx.fillStyle = "#1f3a6e";
+    ctx.fillStyle = (night > 0.6) ? "#152a52" : "#1f3a6e";
     ctx.fillRect(0, H * 0.86, W, H * 0.14);
     ctx.fillStyle = "#1e6bff";
     ctx.fillRect(0, H * 0.86, W, 4);
+
     // lane lines
-    ctx.strokeStyle = "rgba(255,255,255,0.15)";
+    ctx.strokeStyle = "rgba(255,255,255,0.12)";
     ctx.lineWidth = 2;
     for (let i = 0; i < CONFIG.laneCount - 1; i++) {
       const x = (player.laneX[i] + player.laneX[i+1]) / 2;
       ctx.beginPath();
-      ctx.moveTo(x, H * 0.7);
+      ctx.moveTo(x, H * 0.72);
       ctx.lineTo(x, H);
       ctx.stroke();
     }
 
-    // hearts floating decoration
-    ctx.font = "16px serif";
-    ctx.fillStyle = "rgba(255,255,255,0.15)";
-    for (let i = 0; i < 6; i++) {
-      const x = (i * 137 + distance * 0.5) % W;
-      const y = 60 + Math.sin(skyT + i) * 20;
+    // floating hearts
+    ctx.font = "14px serif";
+    ctx.fillStyle = "rgba(255,255,255,0.18)";
+    for (let i = 0; i < 5; i++) {
+      const x = (i * 157 + distance * 0.4) % W;
+      const y = 50 + Math.sin(skyT + i) * 18;
       ctx.fillText("💙", x, y);
     }
   }
 
-  // input handlers attached in main.js via Game methods
   function handleKey(e) {
     if (state !== "playing") return;
     if (e.key === "ArrowLeft" || e.key === "a" || e.key === "A") { player.moveLane(-1); e.preventDefault(); }
@@ -411,32 +444,34 @@ const Game = (function () {
     else if (e.key === "ArrowDown" || e.key === "s" || e.key === "S") { player.slide(); e.preventDefault(); }
     else if (e.key === "p" || e.key === "P" || e.key === "Escape") { pause(); }
   }
+
   function handleTouchStart(e) {
+    if (state !== "playing") return;
     const t = e.changedTouches[0];
     touchStart = { x: t.clientX, y: t.clientY, time: performance.now() };
+    e.preventDefault();
   }
   function handleTouchEnd(e) {
-    if (!touchStart) return;
+    if (!touchStart || state !== "playing") return;
     const t = e.changedTouches[0];
     const dx = t.clientX - touchStart.x;
     const dy = t.clientY - touchStart.y;
     const adx = Math.abs(dx), ady = Math.abs(dy);
-    if (adx < 20 && ady < 20) return;
+    if (adx < 18 && ady < 18) { touchStart = null; return; }
     if (adx > ady) {
       if (dx > 0) player.moveLane(1); else player.moveLane(-1);
     } else {
       if (dy < 0) player.jump(); else player.slide();
     }
     touchStart = null;
+    e.preventDefault();
   }
-  let touchStart = null;
+  function handleTouchMove(e) { if (state === "playing") e.preventDefault(); }
 
-  // visibility pause
   document.addEventListener("visibilitychange", () => {
     if (document.hidden && state === "playing") pause();
   });
 
-  // menu char animation
   function drawMenuChar() {
     const c = document.getElementById("menuChar");
     if (!c) return;
@@ -446,13 +481,14 @@ const Game = (function () {
     p.laneX = [100];
     p.lane = 0;
     p.x = 100;
-    p.baseY = 190;
-    p.y = 190;
+    p.baseY = 195;
+    p.y = 195;
     let t = 0;
     function loop() {
       t += 0.016;
       cx.clearRect(0, 0, 200, 220);
       p.animT = t;
+      p.state = "run";
       p.draw(cx);
       requestAnimationFrame(loop);
     }
@@ -463,38 +499,28 @@ const Game = (function () {
     init() {
       resize();
       window.addEventListener("resize", resize);
+      window.addEventListener("orientationchange", () => setTimeout(resize, 100));
       loadBest();
       UI.init();
       drawMenuChar();
-      // attach input
       window.addEventListener("keydown", handleKey);
-      canvas.addEventListener("touchstart", handleTouchStart, { passive: true });
-      canvas.addEventListener("touchend", handleTouchEnd, { passive: true });
-      // touch buttons
+      canvas.addEventListener("touchstart", handleTouchStart, { passive: false });
+      canvas.addEventListener("touchmove", handleTouchMove, { passive: false });
+      canvas.addEventListener("touchend", handleTouchEnd, { passive: false });
       document.querySelectorAll(".tc-btn").forEach(b => {
-        b.addEventListener("touchstart", (e) => {
-          e.preventDefault();
-          const d = b.dataset.dir;
-          if (d === "left") player && player.moveLane(-1);
-          if (d === "right") player && player.moveLane(1);
-          if (d === "up") player && player.jump();
-          if (d === "down") player && player.slide();
-        }, { passive: false });
-        b.addEventListener("click", () => {
-          if (!player) return;
+        const act = () => {
+          if (!player || state !== "playing") return;
           const d = b.dataset.dir;
           if (d === "left") player.moveLane(-1);
           if (d === "right") player.moveLane(1);
           if (d === "up") player.jump();
           if (d === "down") player.slide();
-        });
+        };
+        b.addEventListener("touchstart", (e) => { e.preventDefault(); act(); }, { passive: false });
+        b.addEventListener("click", act);
       });
     },
-    start,
-    pause,
-    resume,
-    continuePlay,
-    reset,
+    start, pause, resume, continuePlay, reset,
     getState() { return state; },
     getScore() { return score; },
   };

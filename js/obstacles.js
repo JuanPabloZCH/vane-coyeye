@@ -42,7 +42,7 @@ class Obstacle {
     ctx.beginPath(); ctx.roundRect ? ctx.roundRect(x - this.w/2, this.y - this.h, this.w, this.h, 8) : ctx.rect(x-this.w/2, this.y-this.h, this.w, this.h);
     ctx.fill();
     // emoji
-    ctx.font = Math.round(this.h * 0.7) + "px serif";
+    ctx.font = Math.round(this.h * 0.82) + "px serif";
     ctx.textAlign = "center";
     ctx.textBaseline = "middle";
     ctx.fillText(this.type.emoji, x, this.y - this.h/2);

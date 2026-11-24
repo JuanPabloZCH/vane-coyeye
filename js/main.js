@@ -8,6 +8,7 @@ document.addEventListener("DOMContentLoaded", () => {
   const resumeBtn = document.getElementById("resumeBtn");
   const quitBtn = document.getElementById("quitBtn");
   const pauseBtn = document.getElementById("pauseBtn");
+  const fullscreenBtn = document.getElementById("fullscreenBtn");
   const soundBtn = document.getElementById("soundBtn");
   const menuSoundBtn = document.getElementById("menuSoundBtn");
   const specialCloseBtn = document.getElementById("specialCloseBtn");
@@ -27,6 +28,16 @@ document.addEventListener("DOMContentLoaded", () => {
   resumeBtn.addEventListener("click", () => Game.resume());
   quitBtn.addEventListener("click", () => { location.reload(); });
   pauseBtn.addEventListener("click", () => Game.pause());
+  if (fullscreenBtn) {
+    fullscreenBtn.addEventListener("click", () => {
+      const el = document.documentElement;
+      if (!document.fullscreenElement) {
+        (el.requestFullscreen || el.webkitRequestFullscreen || el.msRequestFullscreen).call(el).catch(()=>{});
+      } else {
+        (document.exitFullscreen || document.webkitExitFullscreen || document.msExitFullscreen).call(document).catch(()=>{});
+      }
+    });
+  }
   specialCloseBtn.addEventListener("click", () => {
     Game.continuePlay();
   });
